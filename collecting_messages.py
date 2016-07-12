@@ -2,6 +2,7 @@ import vk_api
 import json
 import requests
 import sys
+import time
 
 
 class Collect_data():
@@ -29,8 +30,8 @@ class Collect_data():
         self.tools = vk_api.VkTools(self.vk_session)
         self.id, self.name = self.get_id_name('')
 
-        self.collect_user_ids()
-        #self.collect_messages()
+        # self.collect_user_ids()
+        self.collect_messages()
 
     def get_id_name(self, id):
         if id == '':
@@ -53,7 +54,6 @@ class Collect_data():
         if 'last_name' in res.keys():
             name += res['last_name']
         return (id, name)
-
 
     def collect_user_ids(self):
         dialogs = self.tools.get_all('messages.getDialogs', 100)
@@ -79,6 +79,7 @@ class Collect_data():
             'my_id': self.id
             , 'my_name': self.name
             , 'messages': []
+            , 'time': time.ctime(time.time())
         }
 
         num_id = 1
@@ -100,10 +101,29 @@ class Collect_data():
             for mess in mess_history['items']:
                 print(mess_num)
                 mess_num += 1
-                obj['history'][mess['from_id']].append((mess['body'], mess['date']))
+                attachment = None
+
+                # Добавляем прикрепления
+                if 'attachments' in mess.keys():
+                    attachment = mess['attachments'][0]
+                    type = attachment['type']
+                    new_attachment = {'type': type}
+                    # Тип прикрепления
+                    if type == 'sticker':
+                        new_attachment['id'] = attachment[type]['id']
+                    elif type == 'wall':
+                        new_attachment['from_id'] = attachment[type]['from_id']
+                        new_attachment['text'] = attachment[type]['text']
+                    elif type == 'photo' or type == 'video' or type == 'audio':
+                        new_attachment['id'] = attachment[type]['id']
+
+                obj['history'][mess['from_id']].append({'message': mess['body']
+                                                        , 'date': mess['date']
+                                                        , 'attachment': attachment
+                                                        })
 
             all_messages['messages'].append(obj)
-            with open('db/all_messages', 'w') as f:
+            with open('db/all_messages~~', 'w') as f:
                 json.dump(all_messages, f)
 
 
