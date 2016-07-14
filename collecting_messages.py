@@ -101,7 +101,7 @@ class Collect_data():
             for mess in mess_history['items']:
                 print(mess_num)
                 mess_num += 1
-                attachment = None
+                new_attachment = None
 
                 # Добавляем прикрепления
                 if 'attachments' in mess.keys():
@@ -119,7 +119,7 @@ class Collect_data():
 
                 obj['history'][mess['from_id']].append({'message': mess['body']
                                                         , 'date': mess['date']
-                                                        , 'attachment': attachment
+                                                        , 'attachment': new_attachment
                                                         })
 
             all_messages['messages'].append(obj)
