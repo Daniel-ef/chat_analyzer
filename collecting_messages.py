@@ -112,8 +112,9 @@ class Collect_data():
                     if type == 'sticker':
                         new_attachment['id'] = attachment[type]['id']
                     elif type == 'wall':
-                        new_attachment['from_id'] = attachment[type]['from_id']
-                        new_attachment['text'] = attachment[type]['text']
+                        if attachment[type]['to_id'] != 0:
+                            new_attachment['group_id'] = attachment[type]['to_id']
+                            new_attachment['text'] = attachment[type]['text']
                     elif type == 'photo' or type == 'video' or type == 'audio':
                         new_attachment['id'] = attachment[type]['id']
 

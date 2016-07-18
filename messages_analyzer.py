@@ -1,6 +1,7 @@
 import json
 import time
 import re
+import requests
 
 import nltk
 import pymorphy2
@@ -15,7 +16,7 @@ class Analyzer:
     def __init__(self):
         with open('db/all_messages', 'r') as f:
             db = json.load(f)
-        self.my_id = str(db['my_id'])
+        self.id = str(db['my_id'])
         self.name = db['my_name']
         self.histories = []
 
@@ -32,6 +33,17 @@ class Analyzer:
             mess_vec.sort(key=lambda a: int(a['date']))
             self.histories.append({'name': messages['name'], 'messages': mess_vec})
 
+    def get_group_names(self, wall):
+        print(wall.keys())
+        res = requests.get('http://api.vk.com/method/groups.getById', {
+            'group_ids': wall.keys()
+        }).json()
+        if res.get('response'):
+            res = res.get('response')[0]
+        else:
+            print('error')
+        a = 0
+
     def statistic(self):
         # Время
         log = str(time.ctime(time.time())) + '\n________________________________________\n\n'
@@ -42,102 +54,75 @@ class Analyzer:
         for history in self.histories[:20]:
 
             # Словари
-            punctuation_my = {}
-            punctuation_fr = {}
+            friend = history['name']
 
-            dif_words_stop_my = {}
-            dif_words_stop_fr = {}
+            feats = {}
+            for feat_name in ['punctuation', 'dif_words', 'dif_words_norm', 'wall']:
+                feats[feat_name] = {}
+                for owner in [self.name, friend]:
+                    feats[feat_name][owner] = {}
 
-            walls_my = {}
-            walls_fr = {}
+            for var_name in ['words_num', 'mess_num', 'words_num_10']:
+                feats[var_name] = {}
+                for owner in [self.name, friend]:
+                    feats[var_name][owner] = 0
 
-            # Переменные
-            words_num_my = 0
-            words_num_fr = 0
-            mess_num_my = 0
-            mess_num_fr = 0
-            words_num_10_my = 0
-            words_num_10_fr = 0
-
+            # Прикрепления
             attachments_types = ['photo', 'video', 'audio', 'wall', 'sticker']
             attachments = dict.fromkeys(attachments_types)
             for obj in attachments.keys():
                 attachments[obj] = {}
                 attachments[obj][self.name] = 0
-                attachments[obj][history['name']] = 0
+                attachments[obj][friend] = 0
 
             for mess in history['messages']:
+                owner = self.name if mess['id'] == self.id else friend
                 # Мои сообщения
-                if mess['id'] == self.my_id:
-                    mess_num_my += 1
-                    for word in nltk.tokenize.TweetTokenizer().tokenize(mess['message']):
-                        # Пунктуация
-                        punct = re.sub('\w+', '', word)
-                        if punct != '':
-                            punctuation_my[punct] = punctuation_my.get(punct, 0) + 1
+                feats['mess_num'][owner] += 1
+                for word in nltk.tokenize.TweetTokenizer().tokenize(mess['message']):
+                    # Пунктуация
+                    punct = re.sub('\w+', '', word)
+                    if punct != '':
+                        feats['punctuation'][owner][punct] = feats['punctuation'][owner].get(punct, 0) + 1
 
-                        # Частота слов
-                        words_num_my += 1
-                        word = re.sub('[(\d|\W)]*', '', word).lower()
-                        if word not in stopwords:
-                            dif_words_stop_my[word] = dif_words_stop_my.get(word, 0) + 1
-                            if len(word) > 10:
-                                words_num_10_my += 1
+                    # Частота слов
+                    feats['words_num'][owner] += 1
+                    word = re.sub('[(\d|\W)]*', '', word).lower()
+                    if word not in stopwords:
+                        feats['dif_words'][owner][word] = feats['dif_words'][owner].get(word, 0) + 1
+                        if len(word) > 10:
+                            feats['words_num_10'][owner] += 1
 
-                    if mess['attachment'] and mess['attachment']['type'] in attachments.keys():
-                        attachments[mess['attachment']['type']][self.name] += 1
-                        if mess['attachment']['type'] == 'wall':
-                            walls_my[mess['attachment']['from_id']] = walls_my.get(mess['attachment']['from_id'], 0) + 1
+                if mess['attachment'] and mess['attachment']['type'] in attachments.keys():
+                    attachments[mess['attachment']['type']][self.name] += 1
+                    if mess['attachment']['type'] == 'wall':
+                        feats['wall'][owner][mess['attachment']['group_id']] =\
+                            feats['wall'][owner].get(mess['attachment']['group_id'], 0) + 1
 
-
-                # Сообщения друга
-                else:
-                    mess_num_fr += 1
-                    for word in nltk.tokenize.TweetTokenizer().tokenize(mess['message']):
-                        # Пунктуация
-                        punct = re.sub('\w+', '', word)
-                        if punct != '':
-                            punctuation_fr[punct] = punctuation_fr.get(punct, 0) + 1
-
-                        # Частота слов
-                        words_num_fr += 1
-                        word = re.sub('[(\d|\W)]*', '', word).lower()
-                        if word not in stopwords:
-                            dif_words_stop_fr[word] = dif_words_stop_fr.get(word, 0) + 1
-                            if len(word) > 10:
-                                words_num_10_fr += 1
-                    if mess['attachment'] and mess['attachment']['type'] in attachments.keys():
-                        attachments[mess['attachment']['type']][history['name']] += 1
-                        if mess['attachment']['type'] == 'wall':
-                            walls_fr[mess['attachment']['from_id']] = walls_fr.get(mess['attachment']['from_id'], 0) + 1
 
             # Нормализация слов
-            my_dif_words_norm = {}
-            for word in dif_words_stop_my.keys():
-                norm_word = morph.parse(word)[0].normal_form
-                my_dif_words_norm[norm_word] = my_dif_words_norm.get(norm_word, 0) + dif_words_stop_my[word]
 
-            fr_dif_words_norm = {}
-            for word in dif_words_stop_fr.keys():
-                norm_word = morph.parse(word)[0].normal_form
-                fr_dif_words_norm[norm_word] = fr_dif_words_norm.get(norm_word, 0) + dif_words_stop_fr[word]
+            for owner in [self.name, friend]:
+                for word in feats['dif_words'][owner].keys():
+                    norm_word = morph.parse(word)[0].normal_form
+                    feats['dif_words_norm'][owner][norm_word] = feats['dif_words_norm'][owner].get(norm_word, 0) + feats['dif_words'][owner][word]
 
-            log += history['name'] + '\n\n'
+            log += friend + '\n\n'
             log += 'Number of messages: ' + str(len(history['messages'])) + '\n\n'
-            log += self.name + ': ' + str(mess_num_my) + '\n'
-            log += history['name'] + ': ' + str(mess_num_fr) + '\n\n'
+            for owner in [self.name, friend]:
+                log += owner + ': ' + str(feats['mess_num'][owner]) + '\n'
 
-            log += 'Number of words\n\n'
-            log += self.name + ': ' + str(words_num_my) + '\n'
-            log += history['name'] + ': ' + str(words_num_fr) + '\n\n'
+            log += '\nNumber of words\n\n'
+            for owner in [self.name, friend]:
+                log += owner + ': ' + str(feats['words_num'][owner]) + '\n'
 
-            log += 'Number of different words\n\n'
-            log += self.name + ': ' + str(len(my_dif_words_norm.keys())) + '\n'
-            log += history['name'] + ': ' + str(len(fr_dif_words_norm.keys())) + '\n\n'
+            log += '\nNumber of different words\n\n'
+            for owner in [self.name, friend]:
+                log += owner + ': ' + str(len(feats['dif_words_norm'][owner].keys())) + '\n'
 
-            log += 'Number of different words more than 10 symbols length\n\n'
-            log += self.name + ': ' + str(words_num_10_my) + '\n'
-            log += history['name'] + ': ' + str(words_num_10_fr) + '\n\n'
+            log += '\nNumber of different words more than 10 symbols length\n\n'
+            for owner in [self.name, friend]:
+                log += owner + ': ' + str(feats['words_num_10'][owner]) + '\n'
 
             def add_to_log_freq_words(dic, log):
                 log = ''
@@ -146,39 +131,36 @@ class Analyzer:
                 return log
 
             log += '\nMost frequent normal words, except stopwords\n\n'
-            log += self.name + ':\n'
+            for owner in [self.name, friend]:
+                log += owner + ':\n'
+                log += add_to_log_freq_words(feats['dif_words_norm'][owner], log) + '\n'
 
-            log += add_to_log_freq_words(my_dif_words_norm, log)
-            log += '\n' + history['name'] +':\n'
-            log += add_to_log_freq_words(fr_dif_words_norm, log)
-
-            log += '\n\nMost frequent punctuation symbols\n\n'
-            log += self.name + ':\n'
-
-            log += add_to_log_freq_words(punctuation_my, log)
-            log += '\n' + history['name'] +':\n'
-            log += add_to_log_freq_words(punctuation_fr, log)
+            log += '\nMost frequent punctuation symbols\n\n'
+            for owner in [self.name, friend]:
+                log += owner + ':\n'
+                log += add_to_log_freq_words(feats['punctuation'][owner], log) + '\n'
 
             # Прикрепления
             log += '\nAttacments:\n\n'
 
             for obj in attachments_types:
                 log += obj + '\n'
-                for owner in [self.name, history['name']]:
+                for owner in [self.name, friend]:
                     log += owner + ' ' + str(attachments[obj][owner]) + '\n'
                 log += '\n'
 
             log += 'Frequent wall\'s reposts\n\n'
 
-            log += self.name + '\n'
-            for item in sorted(walls_my.items(), key=lambda a: a[1])[:10]:
-                log += str(item[0]) + ' ' + str(item[1]) + '\n'
 
-            log += '\n' + history['name'] + '\n'
-            for item in sorted(walls_fr.items(), key=lambda a: a[1])[:10]:
-                log += str(item[0]) + ' ' + str(item[1]) + '\n'
+            # group_names_my = self.get_group_names(walls_my)
+            # group_names_fr = self.get_group_names(walls_fr)
 
-            log += '________________________________________________________________________\n\n\n'
+            for owner in [self.name, friend]:
+                log += owner + '\n'
+                for item in list(reversed(sorted(feats['wall'][owner].items(), key=lambda a: a[1])))[:10]:
+                    log += str(item[0]) + ' ' + str(item[1]) + '\n'
+
+            log += '\n________________________________________________________________________\n\n\n'
 
         with open('statistic', 'w') as f:
             f.write(log)
