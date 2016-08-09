@@ -3,29 +3,12 @@ import json
 import requests
 import sys
 import time
+from authorisation import authorisate
 
 
 class Collect_data():
     def __init__(self):
-        print('Please, enter login and password\nLogin: ')
-        self.login = input()
-        print('Password: ')
-        self.password = input()
-
-        for count in range(2):
-            self.vk_session = vk_api.VkApi(self.login, self.password)
-            try:
-                self.vk_session.authorization()
-                print('authorizated')
-                break
-            except vk_api.AuthorizationError as error_msg:
-                print('Login or password is invalid.\nPlease, try again!\nLogin: ')
-                self.login = input()
-                print('Password: ')
-                self.password = input()
-        else:
-            print('You used up all attemps. Try later :(')
-            sys.exit(1)
+        self.vk_session = authorisate()
 
         self.tools = vk_api.VkTools(self.vk_session)
         self.id, self.name = self.get_id_name('')
@@ -115,6 +98,8 @@ class Collect_data():
                         if attachment[type]['to_id'] != 0:
                             new_attachment['group_id'] = attachment[type]['to_id']
                             new_attachment['text'] = attachment[type]['text']
+                        else:
+                            new_attachment = None
                     elif type == 'photo' or type == 'video' or type == 'audio':
                         new_attachment['id'] = attachment[type]['id']
 

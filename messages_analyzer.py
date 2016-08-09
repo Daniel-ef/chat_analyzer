@@ -2,10 +2,13 @@ import json
 import time
 import re
 import requests
+import vk_api
 
 import nltk
 import pymorphy2
 from nltk.corpus import stopwords
+from authorisation import authorisate
+import numpy
 
 stopwords = set(stopwords.words('russian') + stopwords.words('english') + [''])
 
@@ -20,6 +23,8 @@ class Analyzer:
         self.name = db['my_name']
         self.histories = []
 
+        self.vk_session = authorisate()
+
         self.make_mas(db['messages'])
         self.statistic()
 
@@ -33,25 +38,27 @@ class Analyzer:
             mess_vec.sort(key=lambda a: int(a['date']))
             self.histories.append({'name': messages['name'], 'messages': mess_vec})
 
-    def get_group_names(self, wall):
-        print(wall.keys())
-        res = requests.get('http://api.vk.com/method/groups.getById', {
-            'group_ids': wall.keys()
-        }).json()
-        if res.get('response'):
-            res = res.get('response')[0]
-        else:
-            print('error')
-        a = 0
+    def get_group_names(self, wall_ids):
+        vk = self.vk_session.get_api()
+        res = vk.groups.getById(group_ids=','.join(list(map(str, wall_ids))))
+        group_names = {}
+        for group in res:
+            group_names[group['id']] = group['name']
 
+        return group_names
+
+
+# TODO: слова, присущие только этому человеку
     def statistic(self):
         # Время
         log = str(time.ctime(time.time())) + '\n________________________________________\n\n'
+        hah = re.compile('(^ах[иа]*)|(^хах*)')
+
 
         # Диалоги в порядке убывания количества сообщений
         self.histories = list(reversed(sorted(self.histories, key=lambda a: len(a['messages']))))
 
-        for history in self.histories[:20]:
+        for history in self.histories[:30]:
 
             # Словари
             friend = history['name']
@@ -94,10 +101,9 @@ class Analyzer:
                             feats['words_num_10'][owner] += 1
 
                 if mess['attachment'] and mess['attachment']['type'] in attachments.keys():
-                    attachments[mess['attachment']['type']][self.name] += 1
+                    attachments[mess['attachment']['type']][owner] += 1
                     if mess['attachment']['type'] == 'wall':
-                        feats['wall'][owner][mess['attachment']['group_id']] =\
-                            feats['wall'][owner].get(mess['attachment']['group_id'], 0) + 1
+                        feats['wall'][owner][mess['attachment']['group_id']] = feats['wall'][owner].get(mess['attachment']['group_id'], 0) + 1
 
 
             # Нормализация слов
@@ -105,6 +111,8 @@ class Analyzer:
             for owner in [self.name, friend]:
                 for word in feats['dif_words'][owner].keys():
                     norm_word = morph.parse(word)[0].normal_form
+                    if hah.search(norm_word):
+                        norm_word = 'ахах'
                     feats['dif_words_norm'][owner][norm_word] = feats['dif_words_norm'][owner].get(norm_word, 0) + feats['dif_words'][owner][word]
 
             log += friend + '\n\n'
@@ -151,14 +159,26 @@ class Analyzer:
 
             log += 'Frequent wall\'s reposts\n\n'
 
-
-            # group_names_my = self.get_group_names(walls_my)
-            # group_names_fr = self.get_group_names(walls_fr)
-
             for owner in [self.name, friend]:
                 log += owner + '\n'
-                for item in list(reversed(sorted(feats['wall'][owner].items(), key=lambda a: a[1])))[:10]:
-                    log += str(item[0]) + ' ' + str(item[1]) + '\n'
+                groups = []
+                for item, i in zip(feats['wall'][owner].items(), range(10)):
+                    if item[0] < 0:
+                        groups.append(item)
+
+                print(groups)
+                if groups != []:
+                    groups = numpy.array(list(reversed(sorted(groups, key=lambda a: a[1])))[:10])
+                    print(groups)
+                    group_names = self.get_group_names([str(el)[1:] for el in list(groups[:, 0])])
+                    print(group_names, '\n')
+                    for item in groups:
+                        log += group_names[abs(item[0])] + ' ' + str(item[1]) + '\n'
+                else:
+                    log += 'No wall\'s attachments\n'
+                log += '\n'
+
+            print('\n\n')
 
             log += '\n________________________________________________________________________\n\n\n'
 
